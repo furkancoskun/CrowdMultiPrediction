@@ -17,44 +17,46 @@ class AnomalyDetectionHead(nn.Module):
     def initWeights(self):
         torch.nn.init.xavier_uniform(self.fc.weight)
 
+
 class CountingHead(nn.Module):
-    def __init__(self):
+    def __init__(self, channels=256, layerCount=4):
         super(CountingHead, self).__init__()
-        self.fc = nn.Linear(32, 1)
+        countingHeadLayerList = []
+        for i in range(layerCount):
+            countingHeadLayerList.append(nn.Conv2d(channels, channels, kernel_size=3, stride=1, padding=1))
+            countingHeadLayerList.append(nn.BatchNorm2d(channels))
+            countingHeadLayerList.append(nn.ReLU())
+        countingHeadLayerList.append(nn.Conv2d(channels, 1, kernel_size=3, stride=1, padding=1))
+
+        self.add_module('countingModule', nn.Sequential(*countingHeadLayerList))
 
     def forward(self, x):
-        x = self.fc(x)
-        output = F.relu(x)
+        output = self.countingModule(x)
         return output
 
     def initWeights(self):
-        torch.nn.init.xavier_uniform(self.fc.weight)
+        torch.nn.init.xavier_uniform(self.countingModule.weight)
+
 
 class CrowdMultiPrediction(nn.Module):
     def __init__(self, pretrainedBackbone=False):
-        resnet50_backbone = models.resnet50(pretrained=pretrainedBackbone)  
+        self.resnet50_backbone = models.resnet50(pretrained=pretrainedBackbone)  
         self.countingHead = CountingHead()
         self.anomalyDetectionHead = AnomalyDetectionHead()
-
+        self.countingHeadLoss = nn.MSELoss()
+        
     def forward(self, x):
-        x = self.backbone(x)
-        heatmap = self.countingHead(x)
-        x = self.averagePool(x)
-        x = x.view(64*154*84)
-        x = self.fc32(x)
-        behavCls = self.behavClsHead(x)
-        densLevelCls = self.densLevClsHead(x)
-        count = self.countingHead(x)
-        return behavCls, densLevelCls, count, heatmap
+        xf = self.resnet50_backbone(x)
+        count = self.countingHead(xf)
+        anomaly = self.AnomalyDetectionHead(xf)
+        return count, anomaly
 
     def initWeights(self):
-        torch.nn.init.xavier_uniform(self.fc32.weight)
-        self.behavClsHead.initWeights()
-        self.densLevClsHead.initWeights()
         self.countingHead.initWeights()
-        self.heatMapHead.initWeights()
+        self.anomalyDetectionHead.initWeights()
 
-    def calculateLoss(self, result, groundTruth):
+    def loss(self, result, groundTruth):
+        # for training
         behavClsResult, densLevelClsResult, countResult, heatmapResult = result
         behavClsGt, densLevelClsGt, countGt, heatmapGt = groundTruth
         behavClsLoss = self.behavClsHeadLoss(behavClsResult, behavClsGt)
