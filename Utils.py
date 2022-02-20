@@ -49,7 +49,7 @@ def create_logger(cfg, phase='train'):
     logger.setLevel(logging.INFO)
     console = logging.StreamHandler()
     logging.getLogger('').addHandler(console)
-    return logger
+    return logger, time_str
 
 def print_speed(i, i_time, n, logger):
     """print_speed(index, index_time, total_iteration)"""

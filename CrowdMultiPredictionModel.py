@@ -40,13 +40,13 @@ class CountingHead(nn.Module):
 
 class CrowdMultiPrediction(nn.Module):
     def __init__(self, pretrainedBackbone=False):
-        self.resnet50_backbone = models.resnet50(pretrained=pretrainedBackbone)  
+        self.backbone = models.resnet50(pretrained=pretrainedBackbone)  
         self.countingHead = CountingHead()
         self.anomalyDetectionHead = AnomalyDetectionHead()
         self.countingHeadLoss = nn.MSELoss()
         
     def forward(self, x):
-        xf = self.resnet50_backbone(x)
+        xf = self.backbone(x)
         count = self.countingHead(xf)
         anomaly = self.AnomalyDetectionHead(xf)
         return count, anomaly

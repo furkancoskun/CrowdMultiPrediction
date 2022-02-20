@@ -1,10 +1,12 @@
-import os
 import pprint
 import time
 import yaml
+from os import join
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from CrowdMultiPredictionModel import CrowdMultiPrediction
+import CMP_Dataset
 from Utils import AverageMeter, is_valid_number, print_speed
 from Utils import load_pretrain_net, create_logger, save_model
 from LearningRateScheduler import build_lr_scheduler
@@ -78,12 +80,7 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
                             'train_anomaly_loss' : anomaly_losses.avg},global_steps)        
         writer_dict['train_global_steps'] = global_steps + 1
 
-
-
 def check_trainable(model, logger):
-    """
-    print trainable params info
-    """
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     logger.info('trainable params:')
     for name, param in model.named_parameters():
@@ -95,5 +92,96 @@ def check_trainable(model, logger):
     return trainable_params
 
 
+def build_opt_lr(cfg, model, logger, freeze_backbone=False):
+    if freeze_backbone:
+        logger.info("BACKBONE FREEZED")
+        for param in model.backbone.parameters():
+            param.requires_grad = False
+    else:
+        for param in model.backbone.parameters():
+            param.requires_grad = True        
+
+    for m in model.parameters():
+        if isinstance(m, nn.BatchNorm2d):
+            m.eval()
+
+    trainable_params = []
+    trainable_params += [{'params': filter(lambda x: x.requires_grad,model.parameters()),
+                          'lr': cfg["LEARNING_RATE"]["START_LR"]}]
+
+    logger.info("check trainable params")
+    logger.info(pprint.pformat('trainable_params:{}'.format(trainable_params)))
+
+    optimizer = torch.optim.SGD(trainable_params,
+                                momentum=cfg["MOMENTUM"],
+                                weight_decay=cfg["WEIGHT_DECAY"])
+
+    lr_scheduler = build_lr_scheduler(optimizer, cfg, epochs=cfg["END_EPOCH"])
+    lr_scheduler.step()
+    return optimizer, lr_scheduler
 
 
+def main():
+    yaml_name = "train.yaml"
+    yaml_file = open(yaml_name, 'r')
+    cfg = yaml.load(yaml_file.read(), Loader=yaml.FullLoader)
+
+    logger, time_str = create_logger(cfg, 'train')
+    logger.info(pprint.pformat(cfg))
+
+    tensorboard_writer_path = join(cfg["TENSORBOARD_DIR"], "train_" + time_str)
+    writer_dict = {
+        'writer': SummaryWriter(log_dir=tensorboard_writer_path),
+        'train_global_steps': 0,
+        'validation_global_steps': 0,
+    }
+ 
+    model = CrowdMultiPrediction().cuda()
+
+    logger.info(pprint.pformat(model))
+    print(model)
+
+    if cfg["LOAD_PRETRAINED_MODEL"]:
+        model = load_pretrain_net(model, cfg["PRETRAINED_MODEL_PATH"], logger=logger)
+  
+    optimizer, lr_scheduler = build_opt_lr(cfg, model, logger, freeze_backbone=cfg["FREEZE_BACKBONE"])
+
+    # check trainable again
+    print('double check trainable')
+    check_trainable(model, logger)
+
+    # parallel
+    gpus = [int(i) for i in str(cfg["GPUS"]).split(',')]
+    gpu_num = len(gpus)
+    logger.info('GPU NUM: {:2d}'.format(len(gpus)))
+
+    device = torch.device('cuda:{}'.format(gpus[0]) if torch.cuda.is_available() else 'cpu')
+    model = torch.nn.DataParallel(model, device_ids=gpus).to(device)
+
+    writer_dict['writer'].add_graph(model)
+    logger.info(lr_scheduler)
+    logger.info('model prepare done')
+
+    train_set = CMP_Dataset(cfg, train=True)
+    train_loader = DataLoader(train_set, batch_size=cfg["BATCH_SIZE"] * gpu_num, num_workers=cfg["DATALOADER_WORKERS"], 
+                              pin_memory=True, sampler=None, drop_last=True)
+
+    for epoch in range(cfg["END_EPOCH"]):
+        if cfg["FREEZE_BACKBONE"] and (epoch == ["BACKBONE_UNFREEZE_EPOCH"]):
+            logger.info('Time to unfreeze the backbone')
+            optimizer, lr_scheduler = build_opt_lr(cfg, model, logger, epoch,freeze_backbone=False)
+            check_trainable(model, logger)
+            
+        lr_scheduler.step(epoch)
+        curLR = lr_scheduler.get_cur_lr()
+
+        train(train_loader, model, optimizer, epoch + 1, curLR, cfg, writer_dict, logger, device)
+        
+        # save model
+        save_model(model, epoch, optimizer, "CrowdMultiPrediction", cfg["CHECKPOINT_DIR"], isbest=False)
+
+    writer_dict['writer'].close()
+
+
+if __name__ == '__main__':
+    main()
