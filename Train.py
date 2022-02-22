@@ -24,12 +24,10 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
     anomaly_losses = AverageMeter()
     end = time.time()
 
-    # switch to train mode
     model.train()
     model = model.to(device)
 
     for iter, input in enumerate(train_loader):
-        # measure data loading time
         data_time.update(time.time() - end)
 
 

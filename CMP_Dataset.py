@@ -28,13 +28,14 @@ class CMP_Dataset(Dataset):
         )
 
         dataset_path = cfg["DATASETS"]["GTA_EVENTS_DATASET"]["PATH"]
-
         if (train):
             txt_path = cfg["DATASETS"]["GTA_EVENTS_DATASET"]["TRAIN_TXT"]
         else:
             txt_path = cfg["DATASETS"]["GTA_EVENTS_DATASET"]["TEST_TXT"]
         
-        annotations = []
+        self.lstm_seq_frame_count = cfg["LSTM_SEQUENCE_FRAME_COUNT"]
+
+        self.sequences = []
         txt_file = open(txt_path)
         _ = txt_file.readline()
         lines = txt_file.readlines()
@@ -44,6 +45,7 @@ class CMP_Dataset(Dataset):
             anomaly_frame_amount = int(anomaly_frame_amount)
             seq_directory = os.path.join(dataset_path,video_name,video_name)
 
+            frames = []
             for i in range (anomaly_frame-anomaly_frame_amount, anomaly_frame):
                 image_name = str(i).zfill(10)
                 frame_path = os.path.join(seq_directory, image_name + ".tiff")
@@ -66,7 +68,7 @@ class CMP_Dataset(Dataset):
                     "person_coord_list": coord_list,
                     "person_count": count
                 }
-                annotations.append(dict)
+                frames.append(dict)
 
             for i in range (anomaly_frame, anomaly_frame+anomaly_frame_amount):
                 image_name = str(i).zfill(10)
@@ -90,17 +92,36 @@ class CMP_Dataset(Dataset):
                     "person_coord_list": coord_list,
                     "person_count": count
                 }
-                annotations.append(dict)
+                frames.append(dict)
 
-        print(len(annotations))
+            for i in range(self.lstm_seq_frame_count, len(frames)):
+                self.sequences.append(frames[i-self.lstm_seq_frame_count:i])
+            
+        sample_random.shuffle(self.sequences)
 
     def __len__(self):
-        return self.num
+        return len(self.sequences)
 
     def __getitem__(self, index):
+        seq = self.sequences[index]
+        seq_count = len(seq)
+        frames =[]
+        count_gts = []
+        anomaly_count=0
+        for i in range(seq_count):
+            frame = cv2.imread(seq[i]["frame_path"])
+            frames.append(frame)
+            #print(frame.shape)
+            #print(frame.dtype)
+            count_gts.append(seq[i]["person_count"])
+            if seq[i]["anomaly"] : anomaly_count = anomaly_count+1 
 
-        return index
+        if (anomaly_count > (seq_count/2)):
+            anomaly_gt = True
+        else:
+            anomaly_gt = False
 
+        return frames, count_gts, anomaly_gt
 
 if __name__ == '__main__':
     import os
@@ -116,8 +137,21 @@ if __name__ == '__main__':
 
     print("Data loader created!")
 
-    for iter, input in enumerate(train_loader):
+    cv2.namedWindow("images", cv2.WINDOW_NORMAL)
+    for iter, data in enumerate(train_loader):
         print(f"Iter: {iter}")
+        frames, count_gts, anomaly_gt = data
+        images = []
+        for frame in frames:
+            frame = frame.cpu().numpy()[0,:,:,:] 
+            if (images == []):
+                images = frame
+            else:
+                images = cv2.hconcat([images, frame])
+        for count in count_gts:
+            print ("Count: " + str(count.cpu()))
+        print ("Anomaly: " + str(anomaly_gt.cpu()))
+        cv2.imshow("images", images) 
         k = cv2.waitKey(0)
         if k == 27:
             cv2.destroyAllWindows()
