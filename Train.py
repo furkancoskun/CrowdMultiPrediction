@@ -1,7 +1,7 @@
 import pprint
 import time
 import yaml
-from os import join
+import os
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -27,15 +27,13 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
     model.train()
     model = model.to(device)
 
-    for iter, input in enumerate(train_loader):
+    for iter, data in enumerate(train_loader):
         data_time.update(time.time() - end)
 
-
-        counting_loss, anomaly_loss = model.loss()
-
-        counting_loss = torch.mean(counting_loss)
-        anomaly_loss = torch.mean(anomaly_loss)
-        loss = counting_loss + anomaly_loss
+        frames, count_gts, anomaly_gt = data
+        count_outs, anomaly_out = model(frames)
+        count_loss, anomaly_loss = loss(count_outs, anomaly_out, count_gts, anomaly_gt)
+        loss = count_loss + anomaly_loss
         loss = torch.mean(loss)
 
         # compute gradient and do update step
@@ -43,7 +41,7 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
         loss.backward()
 
         # gradient clip
-        torch.nn.utils.clip_grad_norm(model.parameters(), 10)  
+        #torch.nn.utils.clip_grad_norm(model.parameters(), 10)  
 
         if is_valid_number(loss.item()):
             optimizer.step()
@@ -52,8 +50,8 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
         loss = loss.item()
         losses.update(loss, input.size(0))
 
-        counting_loss = counting_loss.item()
-        counting_losses.update(counting_loss, input.size(0))
+        count_loss = count_loss.item()
+        counting_losses.update(count_loss, input.size(0))
 
         anomaly_loss = anomaly_loss.item()
         anomaly_losses.update(anomaly_loss, input.size(0))
@@ -74,7 +72,7 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
         # write to tensorboard
         writer = writer_dict['writer']
         global_steps = writer_dict['train_global_steps']
-        writer.add_scalars('Train Losses', {'train_total_loss' : losses, 'train_counting_loss' : counting_losses.avg,
+        writer.add_scalars('Train Losses', {'train_total_loss' : losses.avg, 'train_counting_loss' : counting_losses.avg,
                             'train_anomaly_loss' : anomaly_losses.avg},global_steps)        
         writer_dict['train_global_steps'] = global_steps + 1
 
@@ -127,17 +125,16 @@ def main():
     logger, time_str = create_logger(cfg, 'train')
     logger.info(pprint.pformat(cfg))
 
-    tensorboard_writer_path = join(cfg["TENSORBOARD_DIR"], "train_" + time_str)
+    tensorboard_writer_path = os.path.join(cfg["TENSORBOARD_DIR"], "train_" + time_str)
     writer_dict = {
         'writer': SummaryWriter(log_dir=tensorboard_writer_path),
         'train_global_steps': 0,
         'validation_global_steps': 0,
     }
  
-    model = CrowdMultiPrediction().cuda()
+    model = CrowdMultiPrediction(pretrainedBackbone=True).cuda()
 
     logger.info(pprint.pformat(model))
-    print(model)
 
     if cfg["LOAD_PRETRAINED_MODEL"]:
         model = load_pretrain_net(model, cfg["PRETRAINED_MODEL_PATH"], logger=logger)
@@ -145,7 +142,6 @@ def main():
     optimizer, lr_scheduler = build_opt_lr(cfg, model, logger, freeze_backbone=cfg["FREEZE_BACKBONE"])
 
     # check trainable again
-    print('double check trainable')
     check_trainable(model, logger)
 
     # parallel
@@ -154,7 +150,6 @@ def main():
     logger.info('GPU NUM: {:2d}'.format(len(gpus)))
 
     device = torch.device('cuda:{}'.format(gpus[0]) if torch.cuda.is_available() else 'cpu')
-    model = torch.nn.DataParallel(model, device_ids=gpus).to(device)
 
     writer_dict['writer'].add_graph(model)
     logger.info(lr_scheduler)

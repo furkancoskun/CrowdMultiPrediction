@@ -1,11 +1,13 @@
 import os
 import cv2
+import numpy as np
 import yaml
 import random
 import json
 from scipy.ndimage.filters import gaussian_filter
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset
+from Utils import im_to_torch
 
 sample_random = random.Random()
 
@@ -19,13 +21,13 @@ class CMP_Dataset(Dataset):
         self.gray = cfg["AUGMENTATION"]["GRAY"]
         self.blur = cfg["AUGMENTATION"]["BLUR"]
 
-        self.transform_extra = transforms.Compose(
+        """self.transform_extra = transforms.Compose(
             [transforms.ToPILImage(), ] +
             ([transforms.ColorJitter(0.05, 0.05, 0.05, 0.05), ] if self.color > random.random() else [])
             + ([transforms.RandomHorizontalFlip(), ] if self.flip > random.random() else [])
             + ([transforms.RandomRotation(degrees=10), ] if self.rotation > random.random() else [])
             + ([transforms.Grayscale(num_output_channels=3), ] if self.gray > random.random() else [])
-        )
+        )"""
 
         dataset_path = cfg["DATASETS"]["GTA_EVENTS_DATASET"]["PATH"]
         if (train):
@@ -110,9 +112,8 @@ class CMP_Dataset(Dataset):
         anomaly_count=0
         for i in range(seq_count):
             frame = cv2.imread(seq[i]["frame_path"])
+            frame = im_to_torch(frame)
             frames.append(frame)
-            #print(frame.shape)
-            #print(frame.dtype)
             count_gts.append(seq[i]["person_count"])
             if seq[i]["anomaly"] : anomaly_count = anomaly_count+1 
 
@@ -143,7 +144,7 @@ if __name__ == '__main__':
         frames, count_gts, anomaly_gt = data
         images = []
         for frame in frames:
-            frame = frame.cpu().numpy()[0,:,:,:] 
+            frame = frame.cpu().numpy()[0,:,:,:].transpose(1,2,0).astype(np.uint8) 
             if (images == []):
                 images = frame
             else:

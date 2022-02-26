@@ -1,5 +1,8 @@
 ./onnx
+.\onnx
 *.onnx
+./tensorboard
+.\tensorboard
 
 
 # Byte-compiled / optimized / DLL files
