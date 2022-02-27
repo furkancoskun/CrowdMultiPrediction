@@ -1,9 +1,8 @@
-./onnx
-.\onnx
+onnx/
 *.onnx
-./tensorboard
-.\tensorboard
-
+tensorboard/
+snapshot/
+logs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -1,17 +1,17 @@
 LSTM_SEQUENCE_FRAME_COUNT: 10
 
 GPUS: "0"
-DATALOADER_WORKERS: 32
-BATCH_SIZE: 32
+DATALOADER_WORKERS: 8
+BATCH_SIZE: 1
 MOMENTUM: 0.9
-WEIGHT_DECAY: 0.0001  
+WEIGHT_DECAY: 0.0001
 
 END_EPOCH: 50
 LOAD_ONLY_PRETRAINED_BACKBONE: True
 FREEZE_BACKBONE: True
 BACKBONE_UNFREEZE_EPOCH: 6
 LOAD_PRETRAINED_MODEL: False
-PRETRAINED_MODEL_PATH: 'snapshot/model.pth'
+PRETRAINED_MODEL_PATH: 'snapshot\model.pth' #'snapshot/model.pth'
 
 LOG_DIR: 'logs'
 LOG_PRINT_FREQ: 10
@@ -32,9 +32,12 @@ LEARNING_RATE:
 
 DATASETS:
   GTA_EVENTS_DATASET:
-    PATH: 'D:\furkan\GTA_Events_Dataset'
-    TRAIN_TXT: 'D:\furkan\GTA_Events_Dataset\train_videos.txt'
-    TEST_TXT: 'D:\furkan\GTA_Events_Dataset\test_videos_deneme.txt'
+    PATH: '/media/frkncskn/HDD-4TB/furkan/GTA_Events_Dataset'
+    TRAIN_TXT: '/media/frkncskn/HDD-4TB/furkan/GTA_Events_Dataset/train_videos.txt'
+    TEST_TXT: '/media/frkncskn/HDD-4TB/furkan/GTA_Events_Dataset/test_videos.txt'
+    # PATH: 'D:\furkan\GTA_Events_Dataset'
+    # TRAIN_TXT: 'D:\furkan\GTA_Events_Dataset\train_videos.txt'
+    # TEST_TXT: 'D:\furkan\GTA_Events_Dataset\test_videos.txt'
 
 AUGMENTATION:
   COLOR: 1

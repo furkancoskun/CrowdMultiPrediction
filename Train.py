@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from CrowdMultiPredictionModel import CrowdMultiPrediction
-import CMP_Dataset
+from CMP_Dataset import CMP_Dataset
 from Utils import AverageMeter, is_valid_number, print_speed
 from Utils import load_pretrain_net, create_logger, save_model
 from LearningRateScheduler import build_lr_scheduler
@@ -31,8 +31,9 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
         data_time.update(time.time() - end)
 
         frames, count_gts, anomaly_gt = data
-        count_outs, anomaly_out = model(frames)
-        count_loss, anomaly_loss = loss(count_outs, anomaly_out, count_gts, anomaly_gt)
+        count_outs, anomaly_out = model(frames, device=device)
+        count_loss, anomaly_loss = model.loss(count_outs, anomaly_out, count_gts, 
+                                              anomaly_gt, device=device)
         loss = count_loss + anomaly_loss
         loss = torch.mean(loss)
 
@@ -48,18 +49,18 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
 
         # record loss
         loss = loss.item()
-        losses.update(loss, input.size(0))
+        losses.update(loss)
 
         count_loss = count_loss.item()
-        counting_losses.update(count_loss, input.size(0))
+        counting_losses.update(count_loss)
 
         anomaly_loss = anomaly_loss.item()
-        anomaly_losses.update(anomaly_loss, input.size(0))
+        anomaly_losses.update(anomaly_loss)
 
         batch_time.update(time.time() - end)
         end = time.time()
-
-        if ((iter + 1) % cfg["PRINT_FREQ"] == 0):
+        
+        if ((iter + 1) % cfg["LOG_PRINT_FREQ"] == 0):
             logger.info(
                 'TRAIN - Epoch: [{0}][{1}/{2}] lr: {lr:.7f}\t Batch Time: {batch_time.avg:.3f}s \t Data Time:{data_time.avg:.3f}s \t \
                  Counting Loss:{counting_loss.avg:.5f} \t Anomaly Loss:{anomaly_loss.avg:.5f} \t Total Loss:{loss.avg:.5f}'.format(
@@ -72,7 +73,7 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
         # write to tensorboard
         writer = writer_dict['writer']
         global_steps = writer_dict['train_global_steps']
-        writer.add_scalars('Train Losses', {'train_total_loss' : losses.avg, 'train_counting_loss' : counting_losses.avg,
+        writer.add_scalars('Train_Losses', {'train_total_loss' : losses.avg, 'train_counting_loss' : counting_losses.avg,
                             'train_anomaly_loss' : anomaly_losses.avg},global_steps)        
         writer_dict['train_global_steps'] = global_steps + 1
 
@@ -112,7 +113,7 @@ def build_opt_lr(cfg, model, logger, freeze_backbone=False):
                                 momentum=cfg["MOMENTUM"],
                                 weight_decay=cfg["WEIGHT_DECAY"])
 
-    lr_scheduler = build_lr_scheduler(optimizer, cfg, epochs=cfg["END_EPOCH"])
+    lr_scheduler = build_lr_scheduler(optimizer, cfg)
     lr_scheduler.step()
     return optimizer, lr_scheduler
 
@@ -151,13 +152,15 @@ def main():
 
     device = torch.device('cuda:{}'.format(gpus[0]) if torch.cuda.is_available() else 'cpu')
 
-    writer_dict['writer'].add_graph(model)
+    #writer_dict['writer'].add_graph(model)
     logger.info(lr_scheduler)
     logger.info('model prepare done')
 
-    train_set = CMP_Dataset(cfg, train=True)
+    train_set = CMP_Dataset(cfg, logger=logger, train=True)
+ 
     train_loader = DataLoader(train_set, batch_size=cfg["BATCH_SIZE"] * gpu_num, num_workers=cfg["DATALOADER_WORKERS"], 
                               pin_memory=True, sampler=None, drop_last=True)
+    logger.info("Dataloader Created!")
 
     for epoch in range(cfg["END_EPOCH"]):
         if cfg["FREEZE_BACKBONE"] and (epoch == ["BACKBONE_UNFREEZE_EPOCH"]):

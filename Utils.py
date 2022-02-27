@@ -75,7 +75,7 @@ def save_model(model, epoch, optimizer, model_name, checkpoint_dir, isbest=False
         save_checkpoint({
             'epoch': epoch + 1,
             'arch': model_name,
-            'state_dict': model.module.state_dict(),
+            'state_dict': model.state_dict(), 
             'optimizer': optimizer.state_dict()
         }, isbest, checkpoint_dir, 'checkpoint_e%d.pth' % (epoch + 1))
     else:

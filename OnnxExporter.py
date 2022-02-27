@@ -4,6 +4,7 @@ import torchvision.models as models
 import torch.onnx 
 
 resnet50= models.resnet50(pretrained=False)  
+#resnet50= models.resnet34(pretrained=False)  
 model = nn.Sequential(
     resnet50.conv1,
     resnet50.bn1,

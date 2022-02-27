@@ -143,7 +143,7 @@ def _build_warm_up_scheduler(optimizer, cfg, epochs=50, last_epoch=-1):
     return WarmUPScheduler(optimizer, sc1, sc2, last_epoch)
 
 def build_lr_scheduler(optimizer, cfg, last_epoch=-1):
-    epochs = cfg["LEARNING_RATE"]["EPOCH"]
+    epochs = cfg["END_EPOCH"]
     if cfg["LEARNING_RATE"]["WARMUP"]["ENABLE"]:
         return _build_warm_up_scheduler(optimizer, cfg, epochs, last_epoch)
     else:
