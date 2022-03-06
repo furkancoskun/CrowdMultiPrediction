@@ -1,5 +1,6 @@
 import os
 import cv2
+import torch
 import numpy as np
 import yaml
 import random
@@ -116,18 +117,21 @@ class CMP_Dataset(Dataset):
         count_gts = []
         anomaly_count=0
         for i in range(seq_count):
-            frame = cv2.imread(seq[i]["frame_path"]).astype(np.float32)
+            frame = cv2.imread(seq[i]["frame_path"])
+            frame = cv2.resize(frame, (1920,1080), interpolation = cv2.INTER_AREA).astype(np.float32)
             frame = im_to_torch(frame)
             frames.append(frame)
-            count_gts.append(seq[i]["person_count"])
+            count_gts.append(torch.tensor([seq[i]["person_count"]]))
             if seq[i]["anomaly"] : anomaly_count = anomaly_count+1 
 
         if (anomaly_count > (seq_count/2)):
-            anomaly_gt = True
+            anomaly_gt = torch.tensor([1.0])
         else:
-            anomaly_gt = False
+            anomaly_gt = torch.tensor([0.0])
 
-        return frames, count_gts, anomaly_gt
+        frames_batch = torch.stack(frames)
+        count_gts_batch = torch.stack(count_gts)
+        return frames_batch, count_gts_batch, anomaly_gt
 
 if __name__ == '__main__':
     import os

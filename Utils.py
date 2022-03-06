@@ -25,7 +25,7 @@ class AverageMeter(object):
         self.avg = self.sum / self.count if self.count != 0 else 0
 
 def is_valid_number(x):
-    return not(math.isnan(x) or math.isinf(x) or x > 1e4)
+    return not(math.isnan(x) or math.isinf(x))
 
 def to_torch(ndarray):
     return torch.from_numpy(ndarray)
@@ -79,7 +79,7 @@ def save_model(model, epoch, optimizer, model_name, checkpoint_dir, isbest=False
             'optimizer': optimizer.state_dict()
         }, isbest, checkpoint_dir, 'checkpoint_e%d.pth' % (epoch + 1))
     else:
-        print('epoch not save(<5)')
+        print('epoch is not saved')
 
 def check_keys(model, pretrained_state_dict, logger, print_unuse=True):
     ckpt_keys = set(pretrained_state_dict.keys())

@@ -32,42 +32,30 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
         data_time.update(time.time() - end)
 
         frames, count_gts, _ = data
-        for i in range(len(frames)):
-            frame = frames[i].to(device)
-            count_gt = count_gts[i].float().to(device)
-            count_out = model(frame)
-            loss = model.loss(count_out, count_gt)
+        frames = frames.squeeze(dim=0).to(device)
+        count_gts = count_gts.squeeze(dim=0).float().to(device)
+        count_outs = model(frames)
+        loss = model.loss(count_outs, count_gts)
 
-            print("frames[i].size: " + str(frames[i].size()))
-            print("count_gts[i].size: " + str(count_gts[i].size()))
-            print("count_out[i].size: " + str(count_out[i].size()))
-            # frame = frames[i].cpu().numpy()[0,:,:,:].transpose(1,2,0)
-            # print("frame.dtype: " + str(frame.dtype))
-            # print("frame.shape: " + str(frame.shape))
-            # cv2.imshow("frame", frame.astype(np.uint8)) 
-            # k = cv2.waitKey(0)
-            # if k == 27:
-            #     cv2.destroyAllWindows()
-            #     sys.exit()
-            #     break
+        optimizer.zero_grad()
+        loss.backward()
+        loss = loss.item()
 
-            optimizer.zero_grad()
-            loss.backward()
+        if is_valid_number(loss):
+            optimizer.step()
+        else:
+            logger.info("loss: " + str(loss))
+            logger.info("loss is not a valid number! Optimizer not stepped!")
 
-            if is_valid_number(loss.item()):
-                optimizer.step()
-
-            # record loss
-            loss = loss.item()
-            counting_losses.update(loss)
+        counting_losses.update(loss)
 
         batch_time.update(time.time() - end)
         
         if ((iter + 1) % cfg["LOG_PRINT_FREQ"] == 0):
             logger.info(
                 'TRAIN - Epoch: [{0}][{1}/{2}] lr: {lr:.7f}\t Batch Time: {batch_time.avg:.3f}s \t Data Time:{data_time.avg:.3f}s \t \
-                 Counting Loss:{counting_loss.avg:.5f}'.format( epoch, iter + 1, len(train_loader), lr=cur_lr, batch_time=batch_time, 
-                 data_time=data_time, counting_loss=counting_losses))
+                    Counting Loss:{counting_loss.avg:.5f}'.format( epoch, iter + 1, len(train_loader), lr=cur_lr, batch_time=batch_time, 
+                    data_time=data_time, counting_loss=counting_losses))
 
             print_speed((epoch - 1) * len(train_loader) + iter + 1, batch_time.avg,
                         cfg["END_EPOCH"] * len(train_loader), logger)
@@ -75,10 +63,11 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
         # write to tensorboard
         writer = writer_dict['writer']
         global_steps = writer_dict['train_global_steps']
-        writer.add_scalars('Train_Losses', {'train_counting_loss' : counting_losses.avg,
-                            'learning_rate' : cur_lr},global_steps)        
+        writer.add_scalars('Train_Losses', {'train_counting_loss' : counting_losses.avg, 
+                            'learning_rate' : cur_lr},global_steps)       
+        writer.add_scalars('Epoch_Iter', {'epoch' : epoch, 'iter' : iter+1},global_steps)      
         writer_dict['train_global_steps'] = global_steps + 1
-        
+    
         end = time.time()
 
 def check_trainable(model, logger):
@@ -172,7 +161,7 @@ def main():
             optimizer, lr_scheduler = build_opt_lr(cfg, model, logger, freeze_backbone=False)
             check_trainable(model, logger)
             
-        lr_scheduler.step(epoch)
+        lr_scheduler.step()
         curLR = lr_scheduler.get_cur_lr()
 
         train(train_loader, model, optimizer, epoch + 1, curLR, cfg, writer_dict, logger, device)

@@ -40,7 +40,7 @@ class CountingHead(nn.Module):
 
     def forward(self, x):
         x = self.countingModule(x)
-        x = torch.flatten(x)
+        x = torch.flatten(x, start_dim=1)
         x = self.fc(x)
         output = F.relu(x)
         return output
@@ -62,13 +62,11 @@ class CrowdCounting(nn.Module):
             resnet.layer4
         )
         self.backbone_out_channels = 512 #2048 when resnet50 used
-        self.backbone_out_tensor_height = 45
-        self.backbone_out_tensor_width = 80
         self.countingHead = CountingHead(channels=self.backbone_out_channels, layerCount=4)
         self.countingHeadLoss = nn.MSELoss()
         
-    def forward(self, frame):
-        xf = self.backbone(frame)
+    def forward(self, frames):
+        xf = self.backbone(frames)
         count_out = self.countingHead(xf)
         return count_out
 
@@ -92,8 +90,8 @@ class CrowdMultiPrediction(nn.Module):
             resnet.layer4
         )
         self.backbone_out_channels = 512 #2048 when resnet50 used
-        self.backbone_out_tensor_height = 45
-        self.backbone_out_tensor_width = 80
+        self.backbone_out_tensor_height = 34 #45 when input height 1440
+        self.backbone_out_tensor_width = 60 #80 when input height 2560
         self.lstm_encoder = ConvLSTMEncoder(input_dim=self.backbone_out_channels, 
                                             hidden_dim=self.backbone_out_channels, 
                                             kernel_size=(3, 3), bias=True)
@@ -102,25 +100,18 @@ class CrowdMultiPrediction(nn.Module):
         self.countingHeadLoss = nn.MSELoss()
         self.anomalyClsHeadLoss = nn.BCELoss()
         
-    def forward(self, frames, device='cpu'):
+    def forward(self, frames):
+        xf = self.backbone(frames)
+        count_out = self.countingHead(xf)
         (h1_t, c1_t), (h2_t, c2_t) = self.lstm_encoder.init_hidden(batch_size=1,
                                                                    image_size=(self.backbone_out_tensor_height, 
                                                                    self.backbone_out_tensor_width))
-        count_outs = []
-        for frame in frames:
-            frame = frame.to(device)
-            xf = self.backbone(frame)
-            count_outs.append(self.countingHead(xf))
-            h1_t, c1_t, h2_t, c2_t = self.lstm_encoder(input_tensor=xf, cur_state=[h1_t, c1_t, h2_t, c2_t])
+        for i in range(frames.shape[0]):
+            h1_t, c1_t, h2_t, c2_t = self.lstm_encoder(input_tensor=xf[i].unsqueeze(dim=0), cur_state=[h1_t, c1_t, h2_t, c2_t])
         anomaly_out = self.anomalyClsHead(h2_t)
-        return count_outs, anomaly_out
+        return count_out, anomaly_out
 
-    def loss(self, count_outs, anomaly_out, count_gts, anomaly_gt, device):
-        count_losses = []
-        for i in range(len(count_outs)):
-            count_gt = count_gts[i].float().to(device)
-            count_losses.append(self.countingHeadLoss(count_outs[i], count_gt))
-        count_loss = torch.mean(torch.stack(count_losses))
-        anomaly_gt = anomaly_gt.float().to(device)
+    def loss(self, count_out, anomaly_out, count_gt, anomaly_gt):
+        count_loss = self.countingHeadLoss(count_out, count_gt)
         anomaly_loss = self.anomalyClsHeadLoss(anomaly_out, anomaly_gt)
         return count_loss, anomaly_loss

@@ -31,11 +31,14 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
         data_time.update(time.time() - end)
 
         frames, count_gts, anomaly_gt = data
-        count_outs, anomaly_out = model(frames, device=device)
+        frames = frames.squeeze(dim=0).to(device)
+        count_gts = count_gts.squeeze(dim=0).float().to(device)
+        anomaly_gt = anomaly_gt.squeeze(dim=0).type(torch.FloatTensor).to(device)
+        count_outs, anomaly_out = model(frames)
         count_loss, anomaly_loss = model.loss(count_outs, anomaly_out, count_gts, 
-                                              anomaly_gt, device=device)
+                                              anomaly_gt)
+        count_loss = torch.mean(count_loss)
         loss = count_loss + anomaly_loss
-        loss = torch.mean(loss)
 
         # compute gradient and do update step
         optimizer.zero_grad()
@@ -44,11 +47,13 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
         # gradient clip
         #torch.nn.utils.clip_grad_norm(model.parameters(), 10)  
 
-        if is_valid_number(loss.item()):
-            optimizer.step()
-
-        # record loss
         loss = loss.item()
+        if is_valid_number(loss):
+            optimizer.step()
+        else:
+            logger.info("loss: " + str(loss))
+            logger.info("loss is not a valid number! Optimizer not stepped!")
+
         losses.update(loss)
 
         count_loss = count_loss.item()
@@ -58,7 +63,6 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
         anomaly_losses.update(anomaly_loss)
 
         batch_time.update(time.time() - end)
-        end = time.time()
         
         if ((iter + 1) % cfg["LOG_PRINT_FREQ"] == 0):
             logger.info(
@@ -74,8 +78,11 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
         writer = writer_dict['writer']
         global_steps = writer_dict['train_global_steps']
         writer.add_scalars('Train_Losses', {'train_total_loss' : losses.avg, 'train_counting_loss' : counting_losses.avg,
-                            'train_anomaly_loss' : anomaly_losses.avg},global_steps)        
+                            'train_anomaly_loss' : anomaly_losses.avg},global_steps)    
+        writer.add_scalars('Epoch_Iter', {'epoch' : epoch, 'iter' : iter+1},global_steps)      
         writer_dict['train_global_steps'] = global_steps + 1
+
+        end = time.time()
 
 def check_trainable(model, logger):
     trainable_params = [p for p in model.parameters() if p.requires_grad]
@@ -168,13 +175,13 @@ def main():
             optimizer, lr_scheduler = build_opt_lr(cfg, model, logger, freeze_backbone=False)
             check_trainable(model, logger)
             
-        lr_scheduler.step(epoch)
+        lr_scheduler.step()
         curLR = lr_scheduler.get_cur_lr()
 
         train(train_loader, model, optimizer, epoch + 1, curLR, cfg, writer_dict, logger, device)
         
         # save model
-        save_model(model, epoch, optimizer, "CrowdMultiPrediction", cfg["CHECKPOINT_DIR"], isbest=False)
+        save_model(model, epoch + 1, optimizer, "CrowdMultiPrediction", cfg["CHECKPOINT_DIR"], isbest=False)
 
     writer_dict['writer'].close()
 
