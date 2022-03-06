@@ -116,7 +116,7 @@ class CMP_Dataset(Dataset):
         count_gts = []
         anomaly_count=0
         for i in range(seq_count):
-            frame = cv2.imread(seq[i]["frame_path"])
+            frame = cv2.imread(seq[i]["frame_path"]).astype(np.float32)
             frame = im_to_torch(frame)
             frames.append(frame)
             count_gts.append(seq[i]["person_count"])

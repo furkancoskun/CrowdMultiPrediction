@@ -4,8 +4,11 @@ import yaml
 import os
 import torch
 import torch.nn as nn
+import numpy as np
+import cv2
+import sys
 from torch.utils.data import DataLoader
-from CrowdMultiPredictionModel import CrowdMultiPrediction
+from CrowdMultiPredictionModel import CrowdCounting
 from CMP_Dataset import CMP_Dataset
 from Utils import AverageMeter, is_valid_number, print_speed
 from Utils import load_pretrain_net, create_logger, save_model
@@ -19,9 +22,7 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
     # prepare
     batch_time = AverageMeter()
     data_time = AverageMeter()
-    losses = AverageMeter()
     counting_losses = AverageMeter()
-    anomaly_losses = AverageMeter()
     end = time.time()
 
     model.train()
@@ -30,42 +31,43 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
     for iter, data in enumerate(train_loader):
         data_time.update(time.time() - end)
 
-        frames, count_gts, anomaly_gt = data
-        count_outs, anomaly_out = model(frames, device=device)
-        count_loss, anomaly_loss = model.loss(count_outs, anomaly_out, count_gts, 
-                                              anomaly_gt, device=device)
-        loss = count_loss + anomaly_loss
-        loss = torch.mean(loss)
+        frames, count_gts, _ = data
+        for i in range(len(frames)):
+            frame = frames[i].to(device)
+            count_gt = count_gts[i].float().to(device)
+            count_out = model(frame)
+            loss = model.loss(count_out, count_gt)
 
-        # compute gradient and do update step
-        optimizer.zero_grad()
-        loss.backward()
+            print("frames[i].size: " + str(frames[i].size()))
+            print("count_gts[i].size: " + str(count_gts[i].size()))
+            print("count_out[i].size: " + str(count_out[i].size()))
+            # frame = frames[i].cpu().numpy()[0,:,:,:].transpose(1,2,0)
+            # print("frame.dtype: " + str(frame.dtype))
+            # print("frame.shape: " + str(frame.shape))
+            # cv2.imshow("frame", frame.astype(np.uint8)) 
+            # k = cv2.waitKey(0)
+            # if k == 27:
+            #     cv2.destroyAllWindows()
+            #     sys.exit()
+            #     break
 
-        # gradient clip
-        #torch.nn.utils.clip_grad_norm(model.parameters(), 10)  
+            optimizer.zero_grad()
+            loss.backward()
 
-        if is_valid_number(loss.item()):
-            optimizer.step()
+            if is_valid_number(loss.item()):
+                optimizer.step()
 
-        # record loss
-        loss = loss.item()
-        losses.update(loss)
-
-        count_loss = count_loss.item()
-        counting_losses.update(count_loss)
-
-        anomaly_loss = anomaly_loss.item()
-        anomaly_losses.update(anomaly_loss)
+            # record loss
+            loss = loss.item()
+            counting_losses.update(loss)
 
         batch_time.update(time.time() - end)
-        end = time.time()
         
         if ((iter + 1) % cfg["LOG_PRINT_FREQ"] == 0):
             logger.info(
                 'TRAIN - Epoch: [{0}][{1}/{2}] lr: {lr:.7f}\t Batch Time: {batch_time.avg:.3f}s \t Data Time:{data_time.avg:.3f}s \t \
-                 Counting Loss:{counting_loss.avg:.5f} \t Anomaly Loss:{anomaly_loss.avg:.5f} \t Total Loss:{loss.avg:.5f}'.format(
-                    epoch, iter + 1, len(train_loader), lr=cur_lr, batch_time=batch_time, data_time=data_time,
-                    loss=losses, counting_loss=counting_losses, anomaly_loss=anomaly_losses))
+                 Counting Loss:{counting_loss.avg:.5f}'.format( epoch, iter + 1, len(train_loader), lr=cur_lr, batch_time=batch_time, 
+                 data_time=data_time, counting_loss=counting_losses))
 
             print_speed((epoch - 1) * len(train_loader) + iter + 1, batch_time.avg,
                         cfg["END_EPOCH"] * len(train_loader), logger)
@@ -73,9 +75,11 @@ def train(train_loader, model, optimizer, epoch, cur_lr, cfg, writer_dict, logge
         # write to tensorboard
         writer = writer_dict['writer']
         global_steps = writer_dict['train_global_steps']
-        writer.add_scalars('Train_Losses', {'train_total_loss' : losses.avg, 'train_counting_loss' : counting_losses.avg,
-                            'train_anomaly_loss' : anomaly_losses.avg},global_steps)        
+        writer.add_scalars('Train_Losses', {'train_counting_loss' : counting_losses.avg,
+                            'learning_rate' : cur_lr},global_steps)        
         writer_dict['train_global_steps'] = global_steps + 1
+        
+        end = time.time()
 
 def check_trainable(model, logger):
     trainable_params = [p for p in model.parameters() if p.requires_grad]
@@ -123,17 +127,17 @@ def main():
     yaml_file = open(yaml_name, 'r')
     cfg = yaml.load(yaml_file.read(), Loader=yaml.FullLoader)
 
-    logger, time_str = create_logger(cfg, 'train')
+    logger, time_str = create_logger(cfg, 'counting_train_')
     logger.info(pprint.pformat(cfg))
 
-    tensorboard_writer_path = os.path.join(cfg["TENSORBOARD_DIR"], "train_" + time_str)
+    tensorboard_writer_path = os.path.join(cfg["TENSORBOARD_DIR"], "counting_train_" + time_str)
     writer_dict = {
         'writer': SummaryWriter(log_dir=tensorboard_writer_path),
         'train_global_steps': 0,
         'validation_global_steps': 0,
     }
  
-    model = CrowdMultiPrediction(pretrainedBackbone=cfg["LOAD_ONLY_PRETRAINED_BACKBONE"]).cuda()
+    model = CrowdCounting(pretrainedBackbone=cfg["LOAD_ONLY_PRETRAINED_BACKBONE"]).cuda()
 
     logger.info(pprint.pformat(model))
 
@@ -174,7 +178,7 @@ def main():
         train(train_loader, model, optimizer, epoch + 1, curLR, cfg, writer_dict, logger, device)
         
         # save model
-        save_model(model, epoch, optimizer, "CrowdMultiPrediction", cfg["CHECKPOINT_DIR"], isbest=False)
+        save_model(model, epoch, optimizer, "CrowdCounting", cfg["CHECKPOINT_DIR"], isbest=False)
 
     writer_dict['writer'].close()
 

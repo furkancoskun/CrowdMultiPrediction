@@ -46,22 +46,52 @@ class CountingHead(nn.Module):
         return output
 
 
+class CrowdCounting(nn.Module):
+    def __init__(self, pretrainedBackbone=False):
+        super(CrowdCounting, self).__init__()
+        #resnet = models.resnet50(pretrained=pretrainedBackbone)  
+        resnet = models.resnet34(pretrained=pretrainedBackbone)  
+        self.backbone = nn.Sequential(
+            resnet.conv1,
+            resnet.bn1,
+            resnet.relu,
+            resnet.maxpool,
+            resnet.layer1,
+            resnet.layer2,
+            resnet.layer3,
+            resnet.layer4
+        )
+        self.backbone_out_channels = 512 #2048 when resnet50 used
+        self.backbone_out_tensor_height = 45
+        self.backbone_out_tensor_width = 80
+        self.countingHead = CountingHead(channels=self.backbone_out_channels, layerCount=4)
+        self.countingHeadLoss = nn.MSELoss()
+        
+    def forward(self, frame):
+        xf = self.backbone(frame)
+        count_out = self.countingHead(xf)
+        return count_out
+
+    def loss(self, count_out, count_gt):
+        count_loss = self.countingHeadLoss(count_out, count_gt)
+        return count_loss
+
 class CrowdMultiPrediction(nn.Module):
     def __init__(self, pretrainedBackbone=False):
         super(CrowdMultiPrediction, self).__init__()
-        #resnet50 = models.resnet50(pretrained=pretrainedBackbone)  
-        resnet50 = models.resnet34(pretrained=pretrainedBackbone)  
+        #resnet = models.resnet50(pretrained=pretrainedBackbone)  
+        resnet = models.resnet34(pretrained=pretrainedBackbone)  
         self.backbone = nn.Sequential(
-            resnet50.conv1,
-            resnet50.bn1,
-            resnet50.relu,
-            resnet50.maxpool,
-            resnet50.layer1,
-            resnet50.layer2,
-            resnet50.layer3,
-            resnet50.layer4
+            resnet.conv1,
+            resnet.bn1,
+            resnet.relu,
+            resnet.maxpool,
+            resnet.layer1,
+            resnet.layer2,
+            resnet.layer3,
+            resnet.layer4
         )
-        self.backbone_out_channels = 512
+        self.backbone_out_channels = 512 #2048 when resnet50 used
         self.backbone_out_tensor_height = 45
         self.backbone_out_tensor_width = 80
         self.lstm_encoder = ConvLSTMEncoder(input_dim=self.backbone_out_channels, 
@@ -72,7 +102,7 @@ class CrowdMultiPrediction(nn.Module):
         self.countingHeadLoss = nn.MSELoss()
         self.anomalyClsHeadLoss = nn.BCELoss()
         
-    def forward(self, frames, device):
+    def forward(self, frames, device='cpu'):
         (h1_t, c1_t), (h2_t, c2_t) = self.lstm_encoder.init_hidden(batch_size=1,
                                                                    image_size=(self.backbone_out_tensor_height, 
                                                                    self.backbone_out_tensor_width))
