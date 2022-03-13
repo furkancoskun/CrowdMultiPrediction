@@ -46,6 +46,27 @@ class CountingHead(nn.Module):
         return output
 
 
+class DensityMapHead(nn.Module):
+    def __init__(self, channels=2048, layerCount=3):
+        super(DensityMapHead, self).__init__()
+        densityMapHeadLayerList = []
+        for i in range(layerCount):
+            densityMapHeadLayerList.append(nn.ConvTranspose2d(in_channels=channels, out_channels=channels, 
+                                                   kernel_size=3, stride=2, padding=1))
+            densityMapHeadLayerList.append(nn.BatchNorm2d(channels))
+            densityMapHeadLayerList.append(nn.ReLU())
+        densityMapHeadLayerList.append(nn.ConvTranspose2d(in_channels=channels, out_channels=1, 
+                                                   kernel_size=3, stride=2, padding=1))
+        densityMapHeadLayerList.append(nn.ReLU())                                          
+        self.add_module('densityMapModule', nn.Sequential(*densityMapHeadLayerList))
+
+    def forward(self, x):
+        output = self.densityMapModule(x)
+        return output
+
+
+
+
 class CrowdCounting(nn.Module):
     def __init__(self, pretrainedBackbone=False):
         super(CrowdCounting, self).__init__()
@@ -73,6 +94,42 @@ class CrowdCounting(nn.Module):
     def loss(self, count_out, count_gt):
         count_loss = self.countingHeadLoss(count_out, count_gt)
         return count_loss
+
+
+class CrowdCountingWithDensity(nn.Module):
+    def __init__(self, pretrainedBackbone=False):
+        super(CrowdCounting, self).__init__()
+        #resnet = models.resnet50(pretrained=pretrainedBackbone)  
+        resnet = models.resnet34(pretrained=pretrainedBackbone)  
+        self.backbone_part1 = nn.Sequential(
+            resnet.conv1,
+            resnet.bn1,
+            resnet.relu,
+            resnet.maxpool,
+            resnet.layer1,
+            resnet.layer2,
+            resnet.layer3
+        )
+        self.backbone_part2 = resnet.layer4
+        self.backbone_part1_out_channels = 256 #1024 when resnet50 used
+        self.backbone_part2_out_channels = 512 #2048 when resnet50 used
+        self.countingHead = CountingHead(channels=self.backbone_part2_out_channels, layerCount=4)
+        self.densityMapHead = DensityMapHead(channels=self.backbone_part2_out_channels, layerCount=4)
+        self.countingHeadLoss = nn.MSELoss()
+        self.densityMapHeadLoss = nn.MSELoss()
+        
+    def forward(self, frames):
+        xf_part1 = self.backbone_part1(frames)
+        densityMap_out = self.densityMapHead(xf_part1)
+        xf_part2 = self.backbone_part2(xf_part1)
+        count_out = self.countingHead(xf_part2)
+        return count_out, densityMap_out
+
+    def loss(self, count_out, count_gt, densityMap_out, densityMap_gt):
+        count_loss = self.countingHeadLoss(count_out, count_gt)
+        densityMap_loss = self.densityMapHeadLoss(densityMap_out, densityMap_gt)
+        return count_loss, densityMap_loss
+
 
 class CrowdMultiPrediction(nn.Module):
     def __init__(self, pretrainedBackbone=False):

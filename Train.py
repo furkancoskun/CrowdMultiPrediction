@@ -5,7 +5,7 @@ import os
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from CrowdMultiPredictionModel import CrowdMultiPrediction
+from Models import CrowdMultiPrediction
 from CMP_Dataset import CMP_Dataset
 from Utils import AverageMeter, is_valid_number, print_speed
 from Utils import load_pretrain_net, create_logger, save_model

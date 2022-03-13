@@ -10,6 +10,7 @@ from scipy.ndimage.filters import gaussian_filter
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset
 from Utils import im_to_torch
+from DensityMapGaussian import getGaussianDensityMap
 
 sample_random = random.Random()
 
@@ -114,13 +115,17 @@ class CMP_Dataset(Dataset):
         seq = self.sequences[index]
         seq_count = len(seq)
         frames =[]
+        density_maps =[]
         count_gts = []
         anomaly_count=0
         for i in range(seq_count):
             frame = cv2.imread(seq[i]["frame_path"])
-            frame = cv2.resize(frame, (1920,1080), interpolation = cv2.INTER_AREA).astype(np.float32)
-            frame = im_to_torch(frame)
-            frames.append(frame)
+            frame = cv2.resize(frame, (1920,1080), interpolation = cv2.INTER_AREA).astype(np.float32) #resize
+            density_map = getGaussianDensityMap(frame, seq[i]["person_coord_list"], 0.75, 25, 4.0) #0.75 due to resize
+            density_map_torch = im_to_torch(density_map)
+            density_maps.append(density_map_torch)
+            frame_torch = im_to_torch(frame)
+            frames.append(frame_torch)
             count_gts.append(torch.tensor([seq[i]["person_count"]]))
             if seq[i]["anomaly"] : anomaly_count = anomaly_count+1 
 
@@ -131,7 +136,8 @@ class CMP_Dataset(Dataset):
 
         frames_batch = torch.stack(frames)
         count_gts_batch = torch.stack(count_gts)
-        return frames_batch, count_gts_batch, anomaly_gt
+        density_maps_batch = torch.stack(density_maps)
+        return frames_batch, count_gts_batch, anomaly_gt, density_maps_batch
 
 if __name__ == '__main__':
     import os

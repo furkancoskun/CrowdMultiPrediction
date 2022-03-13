@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 import torch.onnx 
-from CrowdMultiPredictionModel import CrowdCounting
-from CrowdMultiPredictionModel import CrowdMultiPrediction
+from Models import CrowdCounting
+from Models import CrowdMultiPrediction
 
-dummy_input = torch.randn(1, 3, 1440, 2560, requires_grad=False)  
+dummy_input = torch.randn(1, 3, 1080, 1920, requires_grad=False)  
 
 #resnet= models.resnet50(pretrained=True)  
 resnet= models.resnet34(pretrained=False)  
@@ -15,7 +15,7 @@ model.eval()
 torch.onnx.export(model,         # model being run 
         dummy_input,       # model input (or a tuple for multiple inputs) 
         "Resnet34.onnx",       # where to save the model  
-        export_params=False,  # store the trained parameter weights inside the model file 
+        export_params=True,  # store the trained parameter weights inside the model file 
     ) 
 print('resnet backbone has been converted to ONNX') 
 
@@ -26,12 +26,12 @@ print('resnet backbone has been converted to ONNX')
 #         export_params=True,  # store the trained parameter weights inside the model file 
 #     ) 
 
-crowdCountingModel= CrowdCounting()  
-crowdCountingModel.eval() 
-torch.onnx.export(crowdCountingModel,         # model being run 
-        dummy_input,       # model input (or a tuple for multiple inputs) 
-        "crowdCountingModel.onnx",       # where to save the model  
-        export_params=False,  # store the trained parameter weights inside the model file 
-    ) 
-print('crowdCountingModel has been converted to ONNX') 
+# crowdCountingModel= CrowdCounting()  
+# crowdCountingModel.eval() 
+# torch.onnx.export(crowdCountingModel,         # model being run 
+#         dummy_input,       # model input (or a tuple for multiple inputs) 
+#         "crowdCountingModel.onnx",       # where to save the model  
+#         export_params=True,  # store the trained parameter weights inside the model file 
+#     ) 
+# print('crowdCountingModel has been converted to ONNX') 
 
